@@ -11,7 +11,7 @@ LiveLite is a lightweight API for managing LiveKit streaming rooms and connectio
 
 ## Requirements
 
-- Go 1.20+
+- Go 1.24.3+
 - LiveKit server credentials
 - Environment variables (see Configuration)
 
