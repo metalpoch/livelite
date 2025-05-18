@@ -2,6 +2,7 @@ package streaming
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/livekit/protocol/auth"
@@ -12,19 +13,27 @@ import (
 type Streaming struct {
 	clientRoom    *lksdk.RoomServiceClient
 	clientIngress *lksdk.IngressClient
-	config        Config
+	clientEgress  *lksdk.EgressClient
+
+	config Config
 }
 type Config struct {
-	Key    string
-	Secret string
-	Url    string
+	Key              string
+	Secret           string
+	Url              string
+	StorageURL       string
+	StorageKey       string
+	StorageSecret    string
+	StorageBucket    string
+	StorageBucketURL string
 }
 
 func NewStreaming(cfg Config) *Streaming {
 	return &Streaming{
 		clientRoom:    lksdk.NewRoomServiceClient(cfg.Url, cfg.Key, cfg.Secret),
 		clientIngress: lksdk.NewIngressClient(cfg.Url, cfg.Key, cfg.Secret),
-		config:        Config{cfg.Key, cfg.Secret, cfg.Url},
+		clientEgress:  lksdk.NewEgressClient(cfg.Url, cfg.Key, cfg.Secret),
+		config:        cfg,
 	}
 }
 
@@ -76,4 +85,46 @@ func (s Streaming) KickUser(roomName, userIdentity string) {
 		Room:     roomName,
 		Identity: userIdentity,
 	})
+}
+
+func (s Streaming) StreamingThumbnails(roomName, identity string) (*livekit.EgressInfo, error) {
+	req := &livekit.ParticipantEgressRequest{
+		RoomName:    roomName,
+		Identity:    identity,
+		ScreenShare: false,
+		Options: &livekit.ParticipantEgressRequest_Advanced{
+			Advanced: &livekit.EncodingOptions{
+				Width:            1280,
+				Height:           720,
+				Framerate:        30,
+				AudioCodec:       livekit.AudioCodec_AAC,
+				AudioBitrate:     128,
+				VideoCodec:       livekit.VideoCodec_H264_HIGH,
+				VideoBitrate:     5000,
+				KeyFrameInterval: 2,
+			},
+		},
+		StreamOutputs: []*livekit.StreamOutput{{
+			Protocol: livekit.StreamProtocol_SRT,
+			Urls:     []string{"srt://localhost:9999"},
+		}},
+		ImageOutputs: []*livekit.ImageOutput{{
+			CaptureInterval: 5,
+			Width:           1280,
+			Height:          720,
+			FilenamePrefix:  fmt.Sprintf("streaming/thumbnail/%s/%s", roomName, identity),
+			FilenameSuffix:  livekit.ImageFileSuffix_IMAGE_SUFFIX_TIMESTAMP,
+			DisableManifest: true,
+			Output: &livekit.ImageOutput_S3{
+				S3: &livekit.S3Upload{
+					Bucket:    s.config.StorageBucket,
+					AccessKey: s.config.StorageKey,
+					Secret:    s.config.StorageSecret,
+					Endpoint:  s.config.StorageURL,
+				},
+			},
+		}},
+	}
+
+	return s.clientEgress.StartParticipantEgress(context.Background(), req)
 }
