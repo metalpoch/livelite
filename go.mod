@@ -3,6 +3,8 @@ module github.com/metalpoch/livelite
 go 1.24.3
 
 require (
+	github.com/aws/aws-sdk-go v1.55.7
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.80.0
 	github.com/gofiber/fiber/v3 v3.0.0-beta.4
 	github.com/joho/godotenv v1.5.1
 	github.com/livekit/protocol v1.36.2-0.20250415074849-d67a6a9f9604
@@ -15,6 +17,7 @@ require (
 	cel.dev/expr v0.23.1 // indirect
 	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
+	github.com/aws/smithy-go v1.22.2 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/bufbuild/protovalidate-go v0.9.2 // indirect
@@ -33,7 +36,7 @@ require (
 	github.com/google/cel-go v0.24.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
-	github.com/haivision/srtgo v0.0.0-20230627061225-a70d53fcd618 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/jxskiss/base62 v1.1.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
@@ -45,7 +48,6 @@ require (
 	github.com/magefile/mage v1.15.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/nats-io/nats.go v1.41.1 // indirect
 	github.com/nats-io/nkeys v0.4.10 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
