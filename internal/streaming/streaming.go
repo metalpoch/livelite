@@ -9,7 +9,16 @@ import (
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
-type Streaming struct {
+type Streaming interface {
+	GetRTMP(roomName, name, identity string) (*livekit.IngressInfo, error)
+	JoinToken(roomName, userIdentity string) (string, error)
+	CreateRoom(roomName string) (*livekit.Room, error)
+	ListRooms() (*livekit.ListRoomsResponse, error)
+	DeleteRoom(id string)
+	KickUser(roomName, userIdentity string)
+}
+
+type streaming struct {
 	clientRoom    *lksdk.RoomServiceClient
 	clientIngress *lksdk.IngressClient
 	clientEgress  *lksdk.EgressClient
@@ -17,18 +26,13 @@ type Streaming struct {
 	config Config
 }
 type Config struct {
-	Key              string
-	Secret           string
-	Url              string
-	StorageURL       string
-	StorageKey       string
-	StorageSecret    string
-	StorageBucket    string
-	StorageBucketURL string
+	Key    string
+	Url    string
+	Secret string
 }
 
-func NewStreaming(cfg Config) *Streaming {
-	return &Streaming{
+func NewStreaming(cfg Config) *streaming {
+	return &streaming{
 		clientRoom:    lksdk.NewRoomServiceClient(cfg.Url, cfg.Key, cfg.Secret),
 		clientIngress: lksdk.NewIngressClient(cfg.Url, cfg.Key, cfg.Secret),
 		clientEgress:  lksdk.NewEgressClient(cfg.Url, cfg.Key, cfg.Secret),
@@ -36,7 +40,7 @@ func NewStreaming(cfg Config) *Streaming {
 	}
 }
 
-func (s *Streaming) GetRTMP(roomName, name, identity string) (*livekit.IngressInfo, error) {
+func (s *streaming) GetRTMP(roomName, name, identity string) (*livekit.IngressInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -50,7 +54,7 @@ func (s *Streaming) GetRTMP(roomName, name, identity string) (*livekit.IngressIn
 	return s.clientIngress.CreateIngress(ctx, req)
 }
 
-func (s *Streaming) JoinToken(roomName, userIdentity string) (string, error) {
+func (s *streaming) JoinToken(roomName, userIdentity string) (string, error) {
 	at := auth.NewAccessToken(s.config.Key, s.config.Secret)
 	grant := &auth.VideoGrant{
 		RoomJoin: true,
@@ -63,23 +67,23 @@ func (s *Streaming) JoinToken(roomName, userIdentity string) (string, error) {
 	return at.ToJWT()
 }
 
-func (s *Streaming) CreateRoom(roomName string) (*livekit.Room, error) {
+func (s *streaming) CreateRoom(roomName string) (*livekit.Room, error) {
 	return s.clientRoom.CreateRoom(context.Background(), &livekit.CreateRoomRequest{
 		Name: roomName,
 	})
 }
 
-func (s *Streaming) ListRooms() (*livekit.ListRoomsResponse, error) {
+func (s *streaming) ListRooms() (*livekit.ListRoomsResponse, error) {
 	return s.clientRoom.ListRooms(context.Background(), &livekit.ListRoomsRequest{})
 }
 
-func (s *Streaming) DeleteRoom(id string) {
+func (s *streaming) DeleteRoom(id string) {
 	s.clientRoom.DeleteRoom(context.Background(), &livekit.DeleteRoomRequest{
 		Room: id,
 	})
 }
 
-func (s *Streaming) KickUser(roomName, userIdentity string) {
+func (s *streaming) KickUser(roomName, userIdentity string) {
 	s.clientRoom.RemoveParticipant(context.Background(), &livekit.RoomParticipantIdentity{
 		Room:     roomName,
 		Identity: userIdentity,

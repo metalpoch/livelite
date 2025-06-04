@@ -1,55 +1,69 @@
 package storage
 
 import (
+	"context"
 	"io"
+	"log"
 	"os"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
 )
 
 type Storage interface {
-	Put(file *os.File, filename string) error
+	Get(filename string) (io.Reader, error)
+	Put(file *os.File, remoteName string) error
+	Delete(filename string) error
+	DeleteDirectory(dir string) error
 }
 
 type storage struct {
-	client *s3.S3
+	client *s3.Client
 	bucket string
 }
 
 type Config struct {
-	Url    string
-	Key    string
-	Secret string
-	Region string
-	Bucket string
+	Url          string
+	Region       string
+	Bucket       string
+	BucketKey    string
+	BucketSecret string
 }
 
-func NewStorage(config Config) (*storage, error) {
-	s3Config := &aws.Config{
-		Credentials:      credentials.NewStaticCredentials(config.Key, config.Secret, ""),
-		Endpoint:         aws.String(config.Url),
-		Region:           aws.String(config.Region),
-		S3ForcePathStyle: aws.Bool(false),
-	}
-
-	newSession, err := session.NewSession(s3Config)
+func NewStorage(cfg Config) *storage {
+	awsCfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(cfg.Region),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			cfg.BucketKey,
+			cfg.BucketSecret,
+			"",
+		)),
+		config.WithEndpointResolver(aws.EndpointResolverFunc(
+			func(service, region string) (aws.Endpoint, error) {
+				return aws.Endpoint{
+					URL:           cfg.Url,
+					SigningRegion: cfg.Region,
+				}, nil
+			},
+		)),
+	)
 	if err != nil {
-		return nil, err
+		log.Fatal(err)
 	}
-	return &storage{s3.New(newSession), config.Bucket}, err
+	client := s3.NewFromConfig(awsCfg)
+	return &storage{client: client, bucket: cfg.Bucket}
 }
 
-func (s *storage) Get(filename string) (io.Reader, error) {
+func (s *storage) Get(remoteName string) (io.Reader, error) {
 	object := &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
-		Key:    aws.String(filename),
+		Key:    aws.String(remoteName),
 	}
 
-	response, err := s.client.GetObject(object)
+	response, err := s.client.GetObject(context.TODO(), object)
 	if err != nil {
 		return nil, err
 	}
@@ -57,34 +71,35 @@ func (s *storage) Get(filename string) (io.Reader, error) {
 	return response.Body, nil
 }
 
-func (s *storage) Put(file *os.File, filename string) error {
+func (s *storage) Put(file *os.File, remoteName string) error {
 	object := s3.PutObjectInput{
 		Bucket: aws.String(s.bucket),
-		Key:    aws.String(filename),
+		Key:    aws.String(remoteName),
 		Body:   file,
-		ACL:    aws.String((string)(types.ObjectCannedACLPublicRead)),
+		ACL:    types.ObjectCannedACLPublicRead,
 	}
-	_, err := s.client.PutObject(&object)
+
+	_, err := s.client.PutObject(context.TODO(), &object)
 	return err
 }
 
-func (s *storage) Delete(filename string) error {
+func (s *storage) Delete(remoteName string) error {
 	object := s3.DeleteObjectInput{
 		Bucket: aws.String(s.bucket),
-		Key:    aws.String(filename),
+		Key:    aws.String(remoteName),
 	}
-	_, err := s.client.DeleteObject(&object)
+	_, err := s.client.DeleteObject(context.TODO(), &object)
 	return err
 }
 
 func (s *storage) DeleteDirectory(dir string) error {
 	input := &s3.ListObjectsV2Input{
-		Bucket: aws.String(s.bucket),
-		Prefix: aws.String(dir),
+		Bucket: &s.bucket,
+		Prefix: &dir,
 	}
 
 	for {
-		output, err := s.client.ListObjectsV2(input)
+		output, err := s.client.ListObjectsV2(context.TODO(), input)
 		if err != nil {
 			return err
 		}
@@ -93,14 +108,14 @@ func (s *storage) DeleteDirectory(dir string) error {
 			break
 		}
 
-		objectsToDelete := make([]*s3.ObjectIdentifier, 0, len(output.Contents))
+		objectsToDelete := make([]types.ObjectIdentifier, 0, len(output.Contents))
 		for _, obj := range output.Contents {
-			objectsToDelete = append(objectsToDelete, &s3.ObjectIdentifier{Key: obj.Key})
+			objectsToDelete = append(objectsToDelete, types.ObjectIdentifier{Key: obj.Key})
 		}
 
-		_, err = s.client.DeleteObjects(&s3.DeleteObjectsInput{
-			Bucket: aws.String(s.bucket),
-			Delete: &s3.Delete{
+		_, err = s.client.DeleteObjects(context.TODO(), &s3.DeleteObjectsInput{
+			Bucket: &s.bucket,
+			Delete: &types.Delete{
 				Objects: objectsToDelete,
 				Quiet:   aws.Bool(true),
 			},
@@ -109,7 +124,7 @@ func (s *storage) DeleteDirectory(dir string) error {
 			return err
 		}
 
-		if !aws.BoolValue(output.IsTruncated) {
+		if output.IsTruncated == nil || !*output.IsTruncated {
 			break
 		}
 		input.ContinuationToken = output.NextContinuationToken
