@@ -157,8 +157,8 @@ func main() {
 		rtmpURL := "rtmp://localhost/live/" + streamName
 		hlsDir := "/tmp/hls/" + streamName
 		hlsPath := filepath.Join(hlsDir, streamName+".m3u8")
-		hlsTime := "10"
-		hlsListSize := "18"
+		hlsTime := "2"
+		hlsListSize := "4"
 		hlsSegmentFilename := filepath.Join(hlsDir, streamName+"_%03d.ts")
 
 		if err := os.MkdirAll(hlsDir, 0755); err != nil {
