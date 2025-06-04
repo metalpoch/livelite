@@ -14,8 +14,8 @@ func StreamToHLS(rtmpURL, hlsSegmentFilename, hlsPath, hlsTime, hlsListSize stri
 	return exec.Command("ffmpeg",
 		"-y",
 		"-i", rtmpURL,
-		"-c:v", "copy", "-c:a", "copy",
-		// "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", // video a H.264 y el audio a AAC, ambos compatibles con HLS
+		// "-c:v", "copy", "-c:a", "copy",
+		"-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", // video a H.264 y el audio a AAC, ambos compatibles con HLS
 		"-f", "hls",
 		"-hls_time", hlsTime,
 		"-hls_list_size", hlsListSize,
