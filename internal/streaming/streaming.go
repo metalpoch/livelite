@@ -16,27 +16,43 @@ type Streaming interface {
 	ListRooms() (*livekit.ListRoomsResponse, error)
 	DeleteRoom(id string)
 	KickUser(roomName, userIdentity string)
+	StartRoomHLSegress(streamName, filenamePrefix, playlistName, livePlaylistName string) (*livekit.EgressInfo, error)
+	DeleteIngress(ingressID string) error
+	DeleteEgress(egressID string) error
 }
 
 type streaming struct {
 	clientRoom    *lksdk.RoomServiceClient
 	clientIngress *lksdk.IngressClient
 	clientEgress  *lksdk.EgressClient
-
-	config Config
+	s3Upload      *livekit.S3Upload
+	config        Config
 }
+
 type Config struct {
-	Key    string
-	Url    string
-	Secret string
+	Key            string
+	Url            string
+	Secret         string
+	BucketKey      string
+	BucketSecret   string
+	BucketRegion   string
+	BucketEndpoint string
+	BucketName     string
 }
 
 func NewStreaming(cfg Config) *streaming {
 	return &streaming{
+		clientEgress:  lksdk.NewEgressClient(cfg.Url, cfg.Key, cfg.Secret),
 		clientRoom:    lksdk.NewRoomServiceClient(cfg.Url, cfg.Key, cfg.Secret),
 		clientIngress: lksdk.NewIngressClient(cfg.Url, cfg.Key, cfg.Secret),
-		clientEgress:  lksdk.NewEgressClient(cfg.Url, cfg.Key, cfg.Secret),
-		config:        cfg,
+		s3Upload: &livekit.S3Upload{
+			AccessKey: cfg.BucketKey,
+			Secret:    cfg.BucketSecret,
+			Region:    cfg.BucketRegion,
+			Endpoint:  cfg.BucketEndpoint,
+			Bucket:    cfg.BucketName,
+		},
+		config: cfg,
 	}
 }
 
@@ -88,4 +104,44 @@ func (s *streaming) KickUser(roomName, userIdentity string) {
 		Room:     roomName,
 		Identity: userIdentity,
 	})
+}
+
+func (s *streaming) StartRoomHLSegress(streamName, filenamePrefix, playlistName, livePlaylistName string) (*livekit.EgressInfo, error) {
+	req := &livekit.RoomCompositeEgressRequest{
+		RoomName: streamName,
+		SegmentOutputs: []*livekit.SegmentedFileOutput{
+			{
+				FilenamePrefix:   filenamePrefix,
+				PlaylistName:     playlistName,
+				LivePlaylistName: livePlaylistName,
+				SegmentDuration:  60,
+				Output: &livekit.SegmentedFileOutput_S3{
+					S3: s.s3Upload,
+				},
+			},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	return s.clientEgress.StartRoomCompositeEgress(ctx, req)
+}
+
+func (s *streaming) DeleteIngress(ingressID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := s.clientIngress.DeleteIngress(ctx, &livekit.DeleteIngressRequest{
+		IngressId: ingressID,
+	})
+	return err
+}
+
+func (s *streaming) DeleteEgress(egressID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := s.clientEgress.StopEgress(ctx, &livekit.StopEgressRequest{
+		EgressId: egressID,
+	})
+	return err
 }

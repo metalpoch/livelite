@@ -5,21 +5,16 @@ import (
 	"log"
 	"net/url"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/joho/godotenv"
-	"github.com/metalpoch/livelite/internal/ffmpeg"
-	"github.com/metalpoch/livelite/internal/storage"
 	"github.com/metalpoch/livelite/internal/streaming"
-	"github.com/metalpoch/livelite/internal/watcher"
 )
 
 var storageBucketURL string
 var live streaming.Streaming
-var bucket storage.Storage
 
 func init() {
 	godotenv.Load()
@@ -41,18 +36,16 @@ func init() {
 	}
 
 	live = streaming.NewStreaming(streaming.Config{
-		Key:    livekitKey,
-		Secret: livekitSecret,
-		Url:    livekitURL,
+		Key:            livekitKey,
+		Secret:         livekitSecret,
+		Url:            livekitURL,
+		BucketKey:      storageBucketKey,
+		BucketSecret:   storageBucketSecret,
+		BucketRegion:   storageRegion,
+		BucketEndpoint: storageURL,
+		BucketName:     storageBucketName,
 	})
 
-	bucket = storage.NewStorage(storage.Config{
-		Url:          storageURL,
-		Region:       storageRegion,
-		Bucket:       storageBucketName,
-		BucketKey:    storageBucketKey,
-		BucketSecret: storageBucketSecret,
-	})
 }
 
 func main() {
@@ -147,35 +140,50 @@ func main() {
 		return c.JSON(res)
 	})
 
-	// FFmpeg HLS
-	app.Post("/hls/:stream", func(c fiber.Ctx) error {
-		streamName, err := url.QueryUnescape(c.Params("stream"))
+	app.Post("/egress/hls/:room", func(c fiber.Ctx) error {
+		room, err := url.QueryUnescape(c.Params("room"))
 		if err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 		}
 
-		rtmpURL := "rtmp://localhost/live/" + streamName
-		hlsDir := "/tmp/hls/" + streamName
-		hlsPath := filepath.Join(hlsDir, streamName+".m3u8")
-		hlsTime := "2"
-		hlsListSize := "4"
-		hlsSegmentFilename := filepath.Join(hlsDir, streamName+"_%03d.ts")
+		filenamePrefix := fmt.Sprintf("streaming/%s/%s", room, time.Now().Format("20060102_150405"))
+		playlistName := fmt.Sprintf("%s.m3u8", room)
+		livePlaylistName := fmt.Sprintf("%s-live.m3u8", room)
 
-		if err := os.MkdirAll(hlsDir, 0755); err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
-		}
-
-		filepath := fmt.Sprintf("streaming/vod/%s", streamName)
-		go watcher.WatchAndUploadHLS(hlsDir, filepath, bucket, 2*time.Minute)
-
-		if err := ffmpeg.StreamToHLS(rtmpURL, hlsSegmentFilename, hlsPath, hlsTime, hlsListSize); err != nil {
+		egressRes, err := live.StartRoomHLSegress(room, filenamePrefix, playlistName, livePlaylistName)
+		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
 
 		return c.JSON(fiber.Map{
-			"message": "HLS VOD started",
-			"hls_url": storageBucketURL + "/" + filepath + "/" + streamName + ".m3u8",
+			"egress_id":     egressRes.EgressId,
+			"playlist_url":  fmt.Sprintf("%s/%s/%s", storageBucketURL, filenamePrefix, playlistName),
+			"live_playlist": fmt.Sprintf("%s/%s/%s", storageBucketURL, filenamePrefix, livePlaylistName),
 		})
+	})
+
+	app.Delete("/ingress/:id", func(c fiber.Ctx) error {
+		id, err := url.QueryUnescape(c.Params("id"))
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		}
+		err = live.DeleteIngress(id)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"result": "ingress deleted"})
+	})
+
+	app.Delete("/egress/:id", func(c fiber.Ctx) error {
+		id, err := url.QueryUnescape(c.Params("id"))
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		}
+		err = live.DeleteEgress(id)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"result": "egress deleted"})
 	})
 
 	app.Listen(":3000")
